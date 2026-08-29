@@ -1,0 +1,98 @@
+import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
+import '../style.css';
+import '../index.css';
+import { applyTitleFix, deleteReport, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
+
+async function onActivate(plugin: ReactRNPlugin) {
+  await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
+    dimensions: { height: 'auto', width: '100%' },
+    widgetTabTitle: 'Organizer',
+  });
+
+  // Scan and write the findings into a document, then open it.
+  // A toast disappears; a document can be re-read and compared against the next run.
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-scan',
+    name: 'Academic Organizer: scan and write report',
+    action: async () => {
+      try {
+        await plugin.app.toast('Clearing previous report…');
+        // Must happen before the scan, or the report audits itself.
+        await deleteReport(plugin);
+        await plugin.app.toast('Scanning knowledge base…');
+        const r = await runAudit(plugin, (done, total) => {
+          void plugin.app.toast(`Scanning ${done} / ${total}…`);
+        });
+        const doc = await writeReport(plugin, r);
+        await plugin.app.toast(
+          `Done: ${r.scanned} rems, ${r.findings.length} findings. Opening report.`,
+        );
+        if (doc) await plugin.window.openRem(doc);
+      } catch (e) {
+        await plugin.app.toast(`Organizer failed: ${String(e)}`);
+      }
+    },
+  });
+
+  // Apply only the title fixes. Duplicates and orphans are never touched here.
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-apply-titles',
+    name: 'Academic Organizer: apply title fixes',
+    action: async () => {
+      try {
+        await deleteReport(plugin); // keep the report out of its own scan
+        await plugin.app.toast('Scanning before applying…');
+        const r = await runAudit(plugin);
+        const items = r.findings.filter((f) => f.kind === 'title');
+        if (!items.length) {
+          await plugin.app.toast('No title fixes to apply.');
+          return;
+        }
+
+        let ok = 0;
+        let skipped = 0;
+        // Batches of 20: a single wide Promise.all saturates the plugin bridge
+        // and writes start failing silently.
+        for (let i = 0; i < items.length; i += 20) {
+          const results = await Promise.all(
+            items.slice(i, i + 20).map((f) =>
+              applyTitleFix(plugin, f).catch(() => false),
+            ),
+          );
+          for (const good of results) good ? ok++ : skipped++;
+          await plugin.app.toast(`Applying ${Math.min(i + 20, items.length)} / ${items.length}…`);
+        }
+
+        await plugin.app.toast(`Applied ${ok}, skipped ${skipped}. Re-scanning…`);
+        const after = await runAudit(plugin);
+        const doc = await writeReport(plugin, after);
+        await plugin.app.toast(
+          `Done. ${ok} renamed. Remaining title findings: ${
+            after.findings.filter((f) => f.kind === 'title').length
+          }`,
+        );
+        if (doc) await plugin.window.openRem(doc);
+      } catch (e) {
+        await plugin.app.toast(`Apply failed: ${String(e)}`);
+      }
+    },
+  });
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-repair-ref-spacing',
+    name: 'Academic Organizer: repair spacing after references',
+    action: async () => {
+      try {
+        await plugin.app.toast('Repairing reference spacing…');
+        const n = await repairRefSpacing(plugin);
+        await plugin.app.toast(`Restored a space in ${n} rem${n === 1 ? '' : 's'}.`);
+      } catch (e) {
+        await plugin.app.toast(`Repair failed: ${String(e)}`);
+      }
+    },
+  });
+}
+
+async function onDeactivate(_: ReactRNPlugin) {}
+
+declareIndexPlugin(onActivate, onDeactivate);

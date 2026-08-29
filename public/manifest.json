@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "academic-organizer",
+  "name": "Academic Organizer",
+  "author": "Winston Davis",
+  "repoUrl": "https://github.com/WinstonForge/remnote-academic-organizer",
+  "version": {
+    "major": 0,
+    "minor": 1,
+    "patch": 0
+  },
+  "theme": [],
+  "enableOnMobile": false,
+  "description": "Audits the knowledge base for title damage, orphans, duplicate documents and untagged courses, then applies only the fixes you approve.",
+  "requestNative": false,
+  "requiredScopes": [
+    {
+      "type": "All",
+      "level": "ReadCreateModifyDelete"
+    }
+  ]
+}
