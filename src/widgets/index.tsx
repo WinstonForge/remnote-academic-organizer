@@ -4,6 +4,7 @@ import '../index.css';
 import { applyTitleFix, deleteReport, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
 import { collapseSafeDuplicates, deleteExtraCopies, removeTagByName } from '../lib/collapse';
 import { mergeDuplicates } from '../lib/merge';
+import { deleteEmptyRems } from '../lib/empties';
 
 async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
@@ -159,6 +160,25 @@ async function onActivate(plugin: ReactRNPlugin) {
         console.log('[delete-extra]', JSON.stringify(r, null, 2));
       } catch (e) {
         await plugin.app.toast(`Delete failed: ${String(e)}`);
+      }
+    },
+  });
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-delete-empties',
+    name: 'Academic Organizer: delete empty rems',
+    action: async () => {
+      try {
+        await deleteReport(plugin);
+        await plugin.app.toast('Finding genuinely empty rems...');
+        const r = await deleteEmptyRems(plugin);
+        const skips = Object.entries(r.skipped).map(([k, n]) => `${n} ${k}`).join(', ');
+        await plugin.app.toast(
+          `Deleted ${r.deleted} of ${r.examined} candidates.${skips ? ' Kept: ' + skips + '.' : ''}`,
+        );
+        console.log('[empties]', JSON.stringify(r, null, 2));
+      } catch (e) {
+        await plugin.app.toast(`Delete empties failed: ${String(e)}`);
       }
     },
   });
