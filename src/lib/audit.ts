@@ -135,7 +135,14 @@ export async function runAudit(
     try {
       const tags = await row.rem.getTagRems();
       const names = await Promise.all(tags.map((t) => plainText(plugin, t)));
-      if (names.some((n) => ['course', 'classes'].includes(n.trim().toLowerCase()))) {
+      // Match on substring, not exact equality. A knowledge base may name its
+      // course tag "Classes", "Course", or something more specific such as
+      // "Course Code (Degree Map)"; an exact match reports all of the latter
+      // as untagged forever.
+      if (names.some((n) => {
+        const s = n.trim().toLowerCase();
+        return s.includes('course') || s.includes('class');
+      })) {
         courseTagged.add(row.rem._id);
       }
     } catch {
