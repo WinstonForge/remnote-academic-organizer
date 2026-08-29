@@ -225,6 +225,7 @@ async function onActivate(plugin: ReactRNPlugin) {
 
 
 
+
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}
