@@ -5,6 +5,7 @@ import { applyCourseTag, applyTitleFix, deleteReport, ensureCourseTag, repairRef
 import { collapseSafeDuplicates, deleteExtraCopies, removeTagByName } from '../lib/collapse';
 import { mergeDuplicates } from '../lib/merge';
 import { deleteEmptyRems } from '../lib/empties';
+import { updateChapterCardCounts } from '../lib/cardcount';
 
 async function onActivate(plugin: ReactRNPlugin) {
   // Apply operator-defined CSS stored in the knowledge base itself. The CSS
@@ -252,6 +253,17 @@ async function onActivate(plugin: ReactRNPlugin) {
 
 
 
+
+  // Card counts per chapter. Written into the notes rather than shown in a
+  // widget, because a Pane widget stopped this plugin activating at all.
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-card-counts',
+    name: 'Academic Organizer: update chapter card counts',
+    action: async () => {
+      try { await plugin.app.toast(await updateChapterCardCounts(plugin)); }
+      catch (e) { await plugin.app.toast(`Card counts failed: ${String(e)}`); }
+    },
+  });
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}
