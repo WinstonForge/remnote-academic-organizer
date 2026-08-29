@@ -7,6 +7,16 @@ import { mergeDuplicates } from '../lib/merge';
 import { deleteEmptyRems } from '../lib/empties';
 
 async function onActivate(plugin: ReactRNPlugin) {
+  // Apply operator-defined CSS stored in the knowledge base itself. The CSS
+  // (and anything personal inside it, like images as data URIs) lives in
+  // synced storage, not in this repository.
+  try {
+    const css = await plugin.storage.getSynced<string>('operator-css');
+    if (css && css.trim() && !css.includes('pending selector')) {
+      await plugin.app.registerCSS('operator-css', css);
+    }
+  } catch { /* never block activation on styling */ }
+
   await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'Organizer',
@@ -216,6 +226,7 @@ async function onActivate(plugin: ReactRNPlugin) {
       }
     },
   });
+
 
 
 
