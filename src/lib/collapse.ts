@@ -75,6 +75,72 @@ export async function collapseSafeDuplicates(plugin: RNPlugin): Promise<Collapse
   return report;
 }
 
+/**
+ * Delete the extra copies of same-parent duplicate sets, WITHOUT merging first.
+ *
+ * Unlike collapseSafeDuplicates this does not require the copies to be
+ * identical, so content the survivor lacks is genuinely discarded. Requested
+ * explicitly. To keep that honest rather than silent, anything unique to a
+ * doomed copy is recorded in `lost` before removal, and removals go to the
+ * trash so they stay recoverable.
+ */
+export async function deleteExtraCopies(plugin: RNPlugin): Promise<CollapseReport & { lost: string[] }> {
+  const report: CollapseReport & { lost: string[] } = {
+    candidates: 0, collapsed: 0, removedIds: [], kept: [], skipped: [], lost: [],
+  };
+
+  const text = async (r: Rem): Promise<string> => {
+    try {
+      return ((await plugin.richText.toString(r.text ?? [])) ?? '').trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const audit = await runAudit(plugin);
+  const targets = audit.findings.filter((f) => f.kind === 'duplicate' && f.sameParent);
+  report.candidates = targets.length;
+
+  for (const f of targets) {
+    const survivor = await plugin.rem.findOne(f.remId);
+    if (!survivor) {
+      report.skipped.push(`${f.current}: survivor missing`);
+      continue;
+    }
+    const have = new Set<string>();
+    for (const c of await survivor.getChildrenRem()) have.add(await text(c));
+
+    let removedHere = 0;
+    for (const id of f.related ?? []) {
+      const copy = await plugin.rem.findOne(id);
+      if (!copy) continue;
+
+      const refs = await copy.remsReferencingThis().catch(() => [] as Rem[]);
+      if (refs.length > 0) {
+        report.skipped.push(`${f.current}: a copy has ${refs.length} inbound reference(s) - kept`);
+        continue;
+      }
+
+      // Record what is about to be lost, before losing it.
+      for (const child of await copy.getChildrenRem()) {
+        const t = await text(child);
+        if (t && !have.has(t)) report.lost.push(`${f.current} :: ${t}`);
+      }
+
+      await copy.remove().catch(() => undefined);
+      if (!(await plugin.rem.findOne(id))) {
+        report.removedIds.push(id);
+        removedHere++;
+      } else report.skipped.push(`${f.current}: remove did not take`);
+    }
+    if (removedHere) {
+      report.collapsed++;
+      report.kept.push(`${f.current} (kept 1, removed ${removedHere})`);
+    }
+  }
+  return report;
+}
+
 /** Remove a tag rem by name. MCP cannot delete tags; the plugin can. */
 export async function removeTagByName(plugin: RNPlugin, name: string): Promise<string> {
   const rt = await plugin.richText.text(name).value();

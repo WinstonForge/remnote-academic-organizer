@@ -2,7 +2,8 @@ import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote
 import '../style.css';
 import '../index.css';
 import { applyTitleFix, deleteReport, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
-import { collapseSafeDuplicates, removeTagByName } from '../lib/collapse';
+import { collapseSafeDuplicates, deleteExtraCopies, removeTagByName } from '../lib/collapse';
+import { mergeDuplicates } from '../lib/merge';
 
 async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
@@ -125,6 +126,42 @@ async function onActivate(plugin: ReactRNPlugin) {
   });
 
 
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-merge-duplicates',
+    name: 'Academic Organizer: merge differing duplicates',
+    action: async () => {
+      try {
+        await deleteReport(plugin);
+        await plugin.app.toast('Merging duplicate sets that share a parent...');
+        const r = await mergeDuplicates(plugin);
+        await plugin.app.toast(
+          `Merged ${r.merged}/${r.sets} sets. Moved ${r.childrenMoved} children, removed ${r.copiesRemoved} copies, skipped ${r.skipped.length}.`,
+        );
+        console.log('[merge]', JSON.stringify(r, null, 2));
+      } catch (e) {
+        await plugin.app.toast(`Merge failed: ${String(e)}`);
+      }
+    },
+  });
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-delete-extra-copies',
+    name: 'Academic Organizer: delete extra duplicate copies',
+    action: async () => {
+      try {
+        await deleteReport(plugin);
+        await plugin.app.toast('Deleting extra copies of same-parent duplicates...');
+        const r = await deleteExtraCopies(plugin);
+        await plugin.app.toast(
+          `Sets: ${r.collapsed}/${r.candidates}. Trashed ${r.removedIds.length} copies. Unique lines lost: ${r.lost.length}. Skipped: ${r.skipped.length}.`,
+        );
+        console.log('[delete-extra]', JSON.stringify(r, null, 2));
+      } catch (e) {
+        await plugin.app.toast(`Delete failed: ${String(e)}`);
+      }
+    },
+  });
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}

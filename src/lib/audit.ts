@@ -514,12 +514,18 @@ export async function writeReport(plugin: RNPlugin, r: AuditResult): Promise<Rem
       if (!child) continue;
       await child.setText([line]);
       await child.setParent(head);
-      // For duplicates, list where each copy actually lives - that is what
-      // makes the set judgeable without opening every rem.
-      for (const p of f.paths ?? []) {
+      // For duplicates, list where each copy lives AND its rem id. The path
+      // alone is not enough to act on - picking a survivor means opening the
+      // specific copies and comparing them.
+      // Duplicates only. Every other finding is a single rem, so emitting a
+      // copy list for it just floods the report with "[path unknown]" lines.
+      const ids = f.kind === 'duplicate' ? [f.remId, ...(f.related ?? [])] : [];
+      const paths = f.paths ?? [];
+      for (let i = 0; i < ids.length; i++) {
         const loc = await plugin.rem.createRem();
         if (!loc) continue;
-        await loc.setText([p]);
+        const tag = i === 0 ? 'largest' : `copy ${i + 1}`;
+        await loc.setText([`[${tag}] ${ids[i]} :: ${paths[i] ?? '[path unknown]'}`]);
         await loc.setParent(child);
       }
     }
