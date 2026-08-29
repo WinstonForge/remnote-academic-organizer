@@ -1,7 +1,7 @@
 import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
 import '../style.css';
 import '../index.css';
-import { applyTitleFix, deleteReport, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
+import { applyCourseTag, applyTitleFix, deleteReport, ensureCourseTag, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
 import { collapseSafeDuplicates, deleteExtraCopies, removeTagByName } from '../lib/collapse';
 import { mergeDuplicates } from '../lib/merge';
 import { deleteEmptyRems } from '../lib/empties';
@@ -182,6 +182,41 @@ async function onActivate(plugin: ReactRNPlugin) {
       }
     },
   });
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-tag-courses',
+    name: 'Academic Organizer: tag untagged course codes',
+    action: async () => {
+      try {
+        await deleteReport(plugin);
+        await plugin.app.toast('Finding course codes without a course tag...');
+        const audit = await runAudit(plugin);
+        const items = audit.findings.filter((f) => f.kind === 'course');
+        if (!items.length) {
+          await plugin.app.toast('No untagged course codes found.');
+          return;
+        }
+        // Reuses the knowledge base's own tag ("Classes" where it exists)
+        // rather than minting a parallel one.
+        const tag = await ensureCourseTag(plugin);
+        if (!tag) {
+          await plugin.app.toast('Could not resolve a course tag - nothing applied.');
+          return;
+        }
+        const tagName = (await plugin.richText.toString(tag.text ?? [])) ?? '?';
+        let ok = 0;
+        let failed = 0;
+        for (const f of items) {
+          (await applyCourseTag(plugin, f, tag)) ? ok++ : failed++;
+        }
+        await plugin.app.toast(`Tagged ${ok} course code(s) with "${tagName}". Failed: ${failed}.`);
+        console.log('[tag-courses]', { tagName, ok, failed, items: items.map((i) => i.current) });
+      } catch (e) {
+        await plugin.app.toast(`Tagging failed: ${String(e)}`);
+      }
+    },
+  });
+
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}

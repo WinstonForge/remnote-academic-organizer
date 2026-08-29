@@ -397,15 +397,70 @@ export async function applyTitleFix(plugin: RNPlugin, f: Finding): Promise<boole
  * Semester and Professor, so prefer that; fall back to "Course" if it is absent.
  */
 export async function ensureCourseTag(plugin: RNPlugin): Promise<Rem | undefined> {
-  for (const candidate of ['Classes', 'Course']) {
-    const name = await plugin.richText.text(candidate).value();
-    const existing = await plugin.rem.findByName(name, null);
-    if (existing) return existing;
+  // findByName(name, null) only searches the TOP LEVEL. A knowledge base whose
+  // course tag lives under a parent (e.g. University > Classes) is missed
+  // entirely, and the caller then creates a duplicate top-level tag - the exact
+  // parallel-tag problem this function exists to avoid. Search all rems, and
+  // prefer whichever candidate is already doing the most tagging.
+  const all = await plugin.rem.getAll();
+  const found: Record<string, { rem: Rem; uses: number }[]> = { classes: [], course: [] };
+
+  for (let i = 0; i < all.length; i += 60) {
+    await Promise.all(
+      all.slice(i, i + 60).map(async (rem) => {
+        const name = ((await plugin.richText.toString(rem.text ?? [])) ?? '').trim().toLowerCase();
+        if (name !== 'classes' && name !== 'course') return;
+        const uses = (await rem.taggedRem().catch(() => [] as Rem[])).length;
+        found[name].push({ rem, uses });
+      }),
+    );
   }
+
+  // Prefer by NAME, then by usage within that name. Ranking purely by usage
+  // lets a freshly created tag outrank the knowledge base's real one as soon as
+  // it has been applied a few times.
+  for (const key of ['classes', 'course']) {
+    const hits = found[key];
+    if (!hits.length) continue;
+    hits.sort((a, b) => b.uses - a.uses);
+    return hits[0].rem;
+  }
+
   const created = await plugin.rem.createRem();
   if (!created) return undefined;
   await created.setText(['Course']);
   return created;
+}
+
+/**
+ * Repair: move rems off a stray course tag onto the knowledge base's real one,
+ * then remove the stray if nothing else uses it.
+ */
+export async function consolidateCourseTag(
+  plugin: RNPlugin,
+  strayId: string,
+): Promise<string> {
+  const stray = await plugin.rem.findOne(strayId);
+  if (!stray) return 'Stray tag not found - nothing to do.';
+  const real = await ensureCourseTag(plugin);
+  if (!real) return 'Could not resolve the real course tag.';
+  if (real._id === strayId) return 'The stray IS the most-used tag - left alone.';
+
+  const realName = ((await plugin.richText.toString(real.text ?? [])) ?? '').trim();
+  const tagged = await stray.taggedRem().catch(() => [] as Rem[]);
+  let moved = 0;
+  for (const r of tagged) {
+    await r.addTag(real).catch(() => undefined);
+    await r.removeTag(strayId).catch(() => undefined);
+    moved++;
+  }
+  const left = await stray.taggedRem().catch(() => [] as Rem[]);
+  let removed = false;
+  if (left.length === 0) {
+    await stray.remove().catch(() => undefined);
+    removed = !(await plugin.rem.findOne(strayId));
+  }
+  return `Moved ${moved} rem(s) onto "${realName}". Stray tag ${removed ? 'removed' : 'kept (still in use)'}.`;
 }
 
 /**
