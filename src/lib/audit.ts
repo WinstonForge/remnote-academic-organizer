@@ -227,9 +227,9 @@ export async function runAudit(
    * Compare by parent REM ID, never by parent name.
    *
    * Every semester block in this degree map is literally named "Course", so a
-   * name-based path makes ACCT 2102, ENGL 1102 and ECON 2105 look like they
-   * share a parent when they are in fact separate semesters - i.e. retakes,
-   * not duplicates.
+   * name-based path makes two enrolments in the same course look like they
+   * share a parent when they are in fact separate semesters - i.e. a retake,
+   * not a duplicate.
    */
   const parentIdOf = async (rem: Rem): Promise<string> => {
     const p = await rem.getParentRem().catch(() => undefined);
