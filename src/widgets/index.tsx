@@ -17,19 +17,6 @@ async function onActivate(plugin: ReactRNPlugin) {
     }
   } catch { /* never block activation on styling */ }
 
-  // Study map: the course at the centre, exams as branches, chapters as leaves.
-  await plugin.app.registerWidget('mindmap', WidgetLocation.Pane, {
-    widgetTabTitle: 'Study Map',
-  });
-
-  await plugin.app.registerCommand({
-    id: 'academic-organizer-study-map',
-    name: 'Academic Organizer: open study map',
-    action: async () => {
-      await plugin.window.openWidgetInPane('mindmap');
-    },
-  });
-
   await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'Organizer',
@@ -239,6 +226,7 @@ async function onActivate(plugin: ReactRNPlugin) {
       }
     },
   });
+
 
 
 
