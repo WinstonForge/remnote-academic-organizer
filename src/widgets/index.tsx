@@ -264,6 +264,7 @@ async function onActivate(plugin: ReactRNPlugin) {
       catch (e) { await plugin.app.toast(`Card counts failed: ${String(e)}`); }
     },
   });
+
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}
