@@ -2,6 +2,7 @@ import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote
 import '../style.css';
 import '../index.css';
 import { applyTitleFix, deleteReport, repairRefSpacing, runAudit, writeReport } from '../lib/audit';
+import { collapseSafeDuplicates, removeTagByName } from '../lib/collapse';
 
 async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('organizer', WidgetLocation.RightSidebar, {
@@ -92,6 +93,36 @@ async function onActivate(plugin: ReactRNPlugin) {
     },
   });
 
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-collapse-duplicates',
+    name: 'Academic Organizer: collapse safe duplicates',
+    action: async () => {
+      try {
+        await deleteReport(plugin);
+        await plugin.app.toast('Finding provably safe duplicate sets...');
+        const r = await collapseSafeDuplicates(plugin);
+        await plugin.app.toast(
+          `Sets collapsed: ${r.collapsed} of ${r.candidates}. Rems trashed: ${r.removedIds.length}. Skipped: ${r.skipped.length}.`,
+        );
+        console.log('[collapse]', JSON.stringify(r, null, 2));
+      } catch (e) {
+        await plugin.app.toast(`Collapse failed: ${String(e)}`);
+      }
+    },
+  });
+
+  await plugin.app.registerCommand({
+    id: 'academic-organizer-remove-test-tag',
+    name: 'Academic Organizer: remove leftover TestTagFromClaude tag',
+    action: async () => {
+      try {
+        await plugin.app.toast(await removeTagByName(plugin, 'TestTagFromClaude'));
+      } catch (e) {
+        await plugin.app.toast(`Tag removal failed: ${String(e)}`);
+      }
+    },
+  });
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}

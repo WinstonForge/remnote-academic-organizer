@@ -11,6 +11,12 @@ export interface Finding {
   detail?: string;
   /** Sibling rem ids, e.g. the other copies in a duplicate set. */
   related?: string[];
+  /** Ancestor path of each copy, used to tell real duplicates from repeated headings. */
+  paths?: string[];
+  /** True when every copy sits under the same parent REM (compared by id, not name). */
+  sameParent?: boolean;
+  /** True when every copy's subtree contains exactly the same text. */
+  identicalContent?: boolean;
 }
 
 export interface AuditResult {
@@ -196,6 +202,43 @@ export async function runAudit(
     }
   }
 
+  // Ancestor path for a rem, nearest parent first. Only used on duplicate
+  // candidates, so the parent walk stays cheap.
+  const pathOf = async (rem: Rem): Promise<string> => {
+    const parts: string[] = [];
+    let cur: Rem | undefined = rem;
+    for (let i = 0; i < 4; i++) {
+      cur = await cur.getParentRem().catch(() => undefined);
+      if (!cur) break;
+      const t = (await plainText(plugin, cur)).trim();
+      parts.push(t || '[untitled]');
+    }
+    return parts.length ? parts.reverse().join(' > ') : '[top level]';
+  };
+
+  /**
+   * Compare by parent REM ID, never by parent name.
+   *
+   * Every semester block in this degree map is literally named "Course", so a
+   * name-based path makes ACCT 2102, ENGL 1102 and ECON 2105 look like they
+   * share a parent when they are in fact separate semesters - i.e. retakes,
+   * not duplicates.
+   */
+  const parentIdOf = async (rem: Rem): Promise<string> => {
+    const p = await rem.getParentRem().catch(() => undefined);
+    return p?._id ?? '[root]';
+  };
+
+  /** Fingerprint a rem's whole subtree, so "identical" means identical. */
+  const fingerprint = async (rem: Rem, depth = 0): Promise<string> => {
+    const own = (await plainText(plugin, rem)).trim();
+    const back = rem.backText ? (await plainText(plugin, rem.backText as any)).trim() : '';
+    if (depth >= 3) return `${own}|${back}`;
+    const kids = await rem.getChildrenRem().catch(() => [] as Rem[]);
+    const kidPrints = await Promise.all(kids.map((k) => fingerprint(k, depth + 1)));
+    return `${own}|${back}[${kidPrints.sort().join(';')}]`;
+  };
+
   // 5. Duplicates - reported with all copies, never merged automatically.
   // A title repeated dozens of times is a recurring daily-note item (a habit
   // tracker, a timer, a template line), not a duplicate anyone wants collapsed.
@@ -204,12 +247,30 @@ export async function runAudit(
     if (bucket.length < 2 || bucket.length > RECURRING_THRESHOLD) continue;
     const sorted = [...bucket].sort((a, b) => b.childCount - a.childCount);
     const canonical = sorted[0];
+    const paths = await Promise.all(sorted.map((r) => pathOf(r.rem)));
+    const parentIds = await Promise.all(sorted.map((r) => parentIdOf(r.rem)));
+    const sameParent = new Set(parentIds).size === 1;
+
+    const prints = await Promise.all(sorted.map((r) => fingerprint(r.rem)));
+    const identicalContent = new Set(prints).size === 1;
+
+    // Only a set that shares a parent AND is byte-identical is safe to act on
+    // without a human choosing which copy survives.
+    const verdict = !sameParent
+      ? 'DIFFERENT PARENTS - leave alone'
+      : identicalContent
+        ? 'SAME PARENT + IDENTICAL CONTENT - safe to collapse'
+        : 'SAME PARENT but CONTENT DIFFERS - needs a human merge';
+
     findings.push({
       kind: 'duplicate',
       remId: canonical.rem._id,
       current: canonical.text,
-      detail: `${bucket.length} copies - largest has ${canonical.childCount} children`,
+      detail: `${bucket.length} copies, largest has ${canonical.childCount} children :: ${verdict}`,
       related: sorted.slice(1).map((r) => r.rem._id),
+      paths,
+      sameParent,
+      identicalContent,
     });
   }
 
@@ -453,6 +514,14 @@ export async function writeReport(plugin: RNPlugin, r: AuditResult): Promise<Rem
       if (!child) continue;
       await child.setText([line]);
       await child.setParent(head);
+      // For duplicates, list where each copy actually lives - that is what
+      // makes the set judgeable without opening every rem.
+      for (const p of f.paths ?? []) {
+        const loc = await plugin.rem.createRem();
+        if (!loc) continue;
+        await loc.setText([p]);
+        await loc.setParent(child);
+      }
     }
   }
   return doc;
